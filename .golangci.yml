@@ -1,0 +1,95 @@
+version: "2"
+
+linters:
+  enable:
+    - depguard   # enforces the import directions in docs/ARCHITECTURE.md
+    - forbidigo  # env access only via config; no log.Fatal outside main
+    - errorlint  # errors.Is/As instead of == and string compares
+    - misspell
+  settings:
+    depguard:
+      rules:
+        agent-stdlib-only:
+          list-mode: strict
+          files: ["**/internal/agent/**"]
+          allow:
+            - $gostd
+            - github.com/google/go-cmp
+        tools:
+          files: ["**/internal/tools/**"]
+          deny: &no-concrete
+            - pkg: github.com/aaryan-purohit/boxagent/internal/cli
+              desc: only cli wires concrete types
+            - pkg: github.com/aaryan-purohit/boxagent/internal/config
+              desc: receive values, don't import config
+            - pkg: github.com/aaryan-purohit/boxagent/internal/session
+              desc: not an allowed import direction
+            - pkg: github.com/aaryan-purohit/boxagent/internal/tools
+              desc: not an allowed import direction
+            - pkg: github.com/aaryan-purohit/boxagent/internal/llm
+              desc: not an allowed import direction
+            - pkg: github.com/aaryan-purohit/boxagent/internal/sandbox
+              desc: define a small interface instead
+            - pkg: github.com/aaryan-purohit/boxagent/internal/vfs
+              desc: define a small interface instead
+        session:
+          files: ["**/internal/session/**"]
+          deny: *no-concrete
+        llm:
+          files: ["**/internal/llm/**"]
+          deny: *no-concrete
+        leaf-packages:
+          files:
+            - "**/internal/vfs/**"
+            - "**/internal/sandbox/**"
+            - "**/internal/config/**"
+          deny:
+            - pkg: github.com/aaryan-purohit/boxagent/internal
+              desc: vfs, sandbox/docker and config import stdlib + their driver only
+        genai-only-in-gemini:
+          files: ["$all", "!**/internal/llm/gemini/**"]
+          deny:
+            - pkg: google.golang.org/genai
+              desc: only internal/llm/gemini imports the SDK
+        docker-only-in-sandbox-and-cli:
+          files: ["$all", "!**/internal/sandbox/docker/**", "!**/internal/cli/**"]
+          deny:
+            - pkg: github.com/moby/moby
+              desc: only sandbox/docker (and cli wiring) use the Docker client
+        banned-everywhere:
+          files: ["$all"]
+          deny:
+            - pkg: github.com/spf13/viper
+              desc: config is read from env in internal/config
+            - pkg: github.com/joho/godotenv
+              desc: no dotenv libraries
+            - pkg: github.com/stretchr/testify
+              desc: use testing + go-cmp
+            - pkg: github.com/golang/mock
+              desc: hand-written fakes only
+            - pkg: go.uber.org/mock
+              desc: hand-written fakes only
+        no-docker-cli:
+          files: ["**/internal/sandbox/**"]
+          deny:
+            - pkg: os/exec
+              desc: use the Docker Go client, never shell out
+    forbidigo:
+      forbid:
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: only internal/config reads env (cli passes os.Getenv into config.Load)
+        - pattern: ^log\.Fatal
+          msg: no log.Fatal outside main
+  exclusions:
+    rules:
+      - path: internal/(config|cli)/
+        text: only internal/config reads env
+        linters: [forbidigo]
+      - path: cmd/
+        text: no log.Fatal outside main
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
